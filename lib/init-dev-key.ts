@@ -13,12 +13,12 @@
 
 import { existsSync, readFileSync, writeFileSync } from 'fs';
 import { resolve } from 'path';
-import { eq } from 'drizzle-orm';
+import { asc, eq } from 'drizzle-orm';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import { generateApiKey } from '@/core-api/lib/api-key-service';
 import { saasApiKeys } from '@/core-api/schema/api-keys';
 import { member } from '@/server/db/schema/organization';
-import { MCP_SCOPE } from './auth';
+import { MCP_SCOPE } from '@/core/lib/mcp/auth';
 
 const ENV_VAR = 'INDIGO_MCP_KEY';
 const KEY_NAME = 'dev-mcp-auto';
@@ -47,14 +47,15 @@ export async function mintDevMcpKey(
     return { status: 'already-present', envPath };
   }
 
-  // Resolve the superadmin's first organisation. Better Auth's
-  // `organization` plugin (or our user-created hook) creates a personal org
-  // for every new user, so this should always succeed — but if not, we
-  // skip gracefully rather than blow up the init flow.
+  // Resolve the superadmin's oldest membership — the personal org created at
+  // signup (deterministic via ORDER BY). Every user gets one via the
+  // user-created hook, so this should always succeed — but if not, we skip
+  // gracefully rather than blow up the init flow.
   const [memberRow] = await db
     .select({ organizationId: member.organizationId })
     .from(member)
     .where(eq(member.userId, superadminUserId))
+    .orderBy(asc(member.createdAt), asc(member.id))
     .limit(1);
 
   if (!memberRow) {
